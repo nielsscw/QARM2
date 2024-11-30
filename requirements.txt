@@ -1,0 +1,7 @@
+pandas
+numpy
+pickle-mixin
+yfinance
+scipy
+matplotlib
+streamlit
