@@ -12,7 +12,7 @@ import base64
 #1.Page setting and financial data cleaning
 
 st.set_page_config(page_title="Black-Litterman Optimization", layout="wide")
-df_p = pd.read_pickle("sentratio_and_price_closetoclose_adj2.pkl")
+df_p = pd.read_pickle("https://github.com/nielsscw/QARM2/blob/main/sentratio_and_price_closetoclose_adj2.pkl")
 tickers = ['AAPL', 'AMD', 'AMRN', 'AMZN', 'BABA', 'BAC', 'BB','GLD', 'IWM',
            'JNUG', 'MNKD', 'NFLX', 'PLUG', 'QQQ', 'SPY', 'TSLA', 'UVXY']
 data = yf.download(
@@ -70,7 +70,7 @@ merged_df['Date'] = pd.to_datetime(merged_df['Date'])
 merged_df['Date'] = merged_df['Date'].dt.strftime('%Y-%m')
 
 # 2. ESG data
-esg_scores_df = pd.read_excel('esg_score_qarm.xlsx')
+esg_scores_df = pd.read_excel('https://github.com/nielsscw/QARM2/blob/main/esg_score_qarm.xlsx')
 esg_scores_df = esg_scores_df.rename(columns={esg_scores_df.columns[0]: 'Name'})
 esg_scores_df.columns = [
     col.strftime('%Y-%m') if isinstance(col, pd.Timestamp) else col
