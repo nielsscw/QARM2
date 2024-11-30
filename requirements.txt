@@ -1,6 +1,6 @@
 pandas
 numpy
-pickle
+pickle-mixin
 yfinance
 scipy
 matplotlib
