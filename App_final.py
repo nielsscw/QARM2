@@ -296,16 +296,7 @@ with tabs[0]:
         """, unsafe_allow_html=True)
 
 
-    st.markdown(
-        """
-        <div style="text-align: center; margin: 50px 0;">
-            <img src="data:image/jpeg;base64,{}" alt="BENGL Alpha Logo" style="max-width: 500px; height: auto;">
-        </div>
-        """.format(
-            base64.b64encode(open("/Users/new/Desktop/PHOTO-2024-11-30-17-57-29.jpg", "rb").read()).decode("utf-8")
-        ),
-        unsafe_allow_html=True
-    )
+
 
 
 
