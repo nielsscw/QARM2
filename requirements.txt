@@ -1,7 +1,8 @@
 pandas
 numpy
-pickle-mixin
+pickle
 yfinance
 scipy
 matplotlib
 streamlit
+openpyxl
