@@ -296,6 +296,18 @@ with tabs[0]:
         """, unsafe_allow_html=True)
 
 
+    st.markdown(
+        """
+        <div style="text-align: center; margin: 50px 0;">
+            <img src="data:image/jpeg;base64,{}" alt="BENGL Alpha Logo" style="max-width: 500px; height: auto;">
+        </div>
+        """.format(
+            base64.b64encode(
+                open("WhatsApp Image 2024-11-30 at 17.57.29.jpeg", "rb").read()
+            ).decode("utf-8")
+        ),
+        unsafe_allow_html=True
+    )
 
 
 
@@ -468,7 +480,7 @@ with tabs[1]:
 
             $$x_0 = \frac{1}{N}$$
 
-            where $$N$$ is the number of assets in the portfolio. Since $$N$$ is equal to 19, the value we obtain for $$x_0 = 0,05263$$
+            where $$N$$ is the number of assets in the portfolio. Since $$N$$ is equal to 17, the value we obtain for $$x_0 = 0,0588$$
             """
         )
 
@@ -941,57 +953,103 @@ with tabs[4]:
         daily_returns.index = pd.to_datetime(daily_returns.index)
         daily_returns = daily_returns.dropna(how='all')
 
+        # Function to assign monthly weights to daily data
         def assign_monthly_weights_to_daily(weights_dict, daily_dates, tickers):
+            # Create a DataFrame from weights_dict
             weights_df = pd.DataFrame.from_dict(weights_dict, orient='index', columns=tickers)
             weights_df.index = pd.to_datetime(weights_df.index).to_period('M')  # Convert to monthly periods
+
+            # Initialize daily_weights DataFrame
             daily_weights = pd.DataFrame(index=daily_dates, columns=tickers)
 
+            # Assign weights for each daily date
             for date in daily_dates:
-                month_period = pd.Period(date, freq='M')
-                if month_period in weights_df.index:
+                month_period = pd.Period(date, freq='M')  # Identify the corresponding month
+                if month_period in weights_df.index:  # Check if the month exists in weights_df
                     daily_weights.loc[date] = weights_df.loc[month_period].values
 
-            return daily_weights.fillna(method='ffill')  # Forward-fill weights for any gaps
+            return daily_weights.ffill()  # Forward-fill to ensure no missing weights
 
-        daily_weights = assign_monthly_weights_to_daily(optimal_weights, daily_returns.index, symbols)
+        # Function to align weights and returns
+        def align_weights_and_returns(weights_df, daily_returns):
+            # Ensure both DataFrames have the same columns
+            common_columns = weights_df.columns.intersection(daily_returns.columns)
+            weights_df = weights_df[common_columns]
+            daily_returns = daily_returns[common_columns]
+            return weights_df, daily_returns
 
         # Function to calculate portfolio daily returns
         def calculate_portfolio_daily_returns(weights_df, daily_returns):
             return (weights_df * daily_returns).sum(axis=1)
 
-        # Calculate optimized portfolio daily returns
+        # Function to calculate mean-variance portfolio weights
+        def calculate_mean_variance_weights(expected_returns, cov_matrix, gamma):
+            def objective(weights):
+                portfolio_return = np.dot(weights, expected_returns)
+                portfolio_variance = np.dot(weights.T, np.dot(cov_matrix, weights))
+                return -portfolio_return + gamma * portfolio_variance  # Negative for maximization
+
+            n_assets = len(expected_returns)
+            constraints = [{'type': 'eq', 'fun': lambda w: np.sum(w) - 1}]  # Weights must sum to 1
+            bounds = [(0, 1) for _ in range(n_assets)]  # Long-only portfolio
+            initial_weights = np.ones(n_assets) / n_assets
+
+            result = minimize(objective, initial_weights, bounds=bounds, constraints=constraints)
+            return result.x
+
+        # Dictionary to store monthly optimal weights
+        MV_optimal_weights = {}
+
+        # Generate monthly weights using rolling window
+        for current_date in pd.date_range(start="2018-01", end="2019-12", freq="M"):
+            training_end_date = current_date - pd.DateOffset(months=1)
+            training_start_date = training_end_date - pd.DateOffset(months=window_size)
+
+            # Filter training data
+            training_data = merged_df[
+                (merged_df["Date"] >= training_start_date.strftime('%Y-%m')) &
+                (merged_df["Date"] <= training_end_date.strftime('%Y-%m'))
+            ]
+
+            # Calculate returns and covariance matrix
+            training_data["return"] = training_data.groupby("ticker")["price"].pct_change()
+            training_data = training_data.dropna(subset=["return"])
+            returns_pivot = training_data.pivot(index="Date", columns="ticker", values="return")
+
+            expected_returns = returns_pivot.mean() * 252  # Annualized returns
+            cov_matrix = returns_pivot.cov() * 252  # Annualized covariance matrix
+
+            # Compute optimal weights
+            mean_var_weights = calculate_mean_variance_weights(expected_returns.values, cov_matrix.values, gamma)
+            MV_optimal_weights[current_date] = mean_var_weights
+
+        # Assign monthly weights to daily data
+        MV_daily_weights = assign_monthly_weights_to_daily(MV_optimal_weights, daily_returns.index, daily_returns.columns)
+        daily_weights = assign_monthly_weights_to_daily(optimal_weights, daily_returns.index, daily_returns.columns)
+        # Align weights and returns
+        aligned_weights, aligned_daily_returns = align_weights_and_returns(MV_daily_weights, daily_returns)
+
+        # Calculate daily portfolio returns
+        MV_portfolio_daily_returns = calculate_portfolio_daily_returns(aligned_weights, aligned_daily_returns)
         portfolio_daily_returns = calculate_portfolio_daily_returns(daily_weights, daily_returns)
 
-        # Calculate SPY benchmark daily returns
+        # Calculate benchmark and equally weighted portfolio returns
         spy_daily_returns = daily_returns['SPY']
-
-        # Calculate equally weighted portfolio daily returns
         equal_weights = np.ones(len(daily_returns.columns)) / len(daily_returns.columns)
         equally_weighted_daily_returns = daily_returns.dot(equal_weights)
 
-        # Calculate minimum-variance portfolio daily returns
-        def calculate_min_variance_weights(cov_matrix):
-            n_assets = cov_matrix.shape[0]
-            ones = np.ones(n_assets)
-            inv_cov = np.linalg.inv(cov_matrix)
-            min_var_weights = inv_cov @ ones / (ones.T @ inv_cov @ ones)
-            return min_var_weights
-
-        cov_matrix = daily_returns.cov()
-        min_var_weights = calculate_min_variance_weights(cov_matrix)
-        min_variance_daily_returns = daily_returns.dot(min_var_weights)
-
-        # Calculate daily cumulative returns
+        # Calculate cumulative returns
         portfolio_cum_returns = (1 + portfolio_daily_returns).cumprod()
         spy_cum_returns = (1 + spy_daily_returns).cumprod()
         equally_weighted_cum_returns = (1 + equally_weighted_daily_returns).cumprod()
-        min_variance_cum_returns = (1 + min_variance_daily_returns).cumprod()
+        mean_variance_cum_returns = (1 + MV_portfolio_daily_returns).cumprod()
 
-        # Normalize cumulative returns to start at 0% for comparability
+        # Normalize cumulative returns
         portfolio_cum_returns = (portfolio_cum_returns / portfolio_cum_returns.iloc[0]) - 1
         spy_cum_returns = (spy_cum_returns / spy_cum_returns.iloc[0]) - 1
         equally_weighted_cum_returns = (equally_weighted_cum_returns / equally_weighted_cum_returns.iloc[0]) - 1
-        min_variance_cum_returns = (min_variance_cum_returns / min_variance_cum_returns.iloc[0]) - 1
+        mean_variance_cum_returns = (mean_variance_cum_returns / mean_variance_cum_returns.iloc[0]) - 1
+
 
         # Metrics calculation
         def calculate_metrics(returns):
@@ -1013,13 +1071,13 @@ with tabs[4]:
         metrics_portfolio = calculate_metrics(portfolio_daily_returns)
         metrics_spy = calculate_metrics(spy_daily_returns)
         metrics_equal = calculate_metrics(equally_weighted_daily_returns)
-        metrics_min_var = calculate_metrics(min_variance_daily_returns)
+        metrics_mean_var = calculate_metrics(MV_portfolio_daily_returns)
 
         metrics_df = pd.DataFrame({
             'Optimized Portfolio': metrics_portfolio,
             'SPY (Benchmark)': metrics_spy,
             'Equally Weighted Portfolio': metrics_equal,
-            'Minimum-Variance Portfolio': metrics_min_var
+            'Mean-Variance Portfolio': metrics_mean_var
         })
 
         # Plot cumulative returns
@@ -1028,13 +1086,14 @@ with tabs[4]:
         ax_cum_returns.plot(portfolio_cum_returns, label='Optimized Portfolio', linewidth=2, color='blue')
         ax_cum_returns.plot(spy_cum_returns, label='SPY (Benchmark)', linewidth=2, linestyle='--', color='orange')
         ax_cum_returns.plot(equally_weighted_cum_returns, label='Equally Weighted Portfolio', linewidth=2, linestyle='-.', color='green')
-        ax_cum_returns.plot(min_variance_cum_returns, label='Minimum-Variance Portfolio', linewidth=2, linestyle=':', color='red')
+        ax_cum_returns.plot(mean_variance_cum_returns, label='Mean-Variance Portfolio', linewidth=2, linestyle=':', color='red')
         ax_cum_returns.set_title("Cumulative Returns Comparison", fontsize=16)
         ax_cum_returns.set_xlabel('Date', fontsize=12)
         ax_cum_returns.set_ylabel('Cumulative Return', fontsize=12)
         ax_cum_returns.legend(fontsize=12, loc='upper left', frameon=True, shadow=True, fancybox=True)
         ax_cum_returns.grid(alpha=0.3)
         st.pyplot(fig_cum_returns)
+
 
         # Display performance metrics
         st.subheader("Portfolio Performance Metrics")
